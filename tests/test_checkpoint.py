@@ -1,8 +1,7 @@
 """Tests for checkpoint functionality."""
 
+
 import pytest
-import tempfile
-from pathlib import Path
 
 from agentguard.core.checkpoint import Checkpoint, CheckpointData
 from agentguard.stores.memory import MemoryStore

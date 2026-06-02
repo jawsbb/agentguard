@@ -48,8 +48,7 @@ yet. Contributions welcome.
 - **`_safe_serialize` pickle path.** It can emit pickled-hex blobs that are
   never decoded back on restore; loading arbitrary pickles is also a security
   consideration.
-- **Metadata inconsistencies.** `CONTRIBUTING.md` is referenced from the README
-  but does not exist; the `docs/` directory is empty; the PyPI badge /
+- **Metadata inconsistencies.** The `docs/` directory is empty; the PyPI badge /
   `pip install agentguard` imply a published package that isn't on PyPI yet.
 
 ## Operational notes

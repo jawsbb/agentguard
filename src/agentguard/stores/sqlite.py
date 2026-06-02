@@ -58,7 +58,7 @@ class SQLiteStore(BaseStore):
         conn.row_factory = sqlite3.Row
         return conn
 
-    def save(self, data: "CheckpointData") -> None:
+    def save(self, data: CheckpointData) -> None:
         """Save a checkpoint."""
         with self._connect() as conn:
             conn.execute(
@@ -78,7 +78,7 @@ class SQLiteStore(BaseStore):
             )
             conn.commit()
 
-    def load(self, checkpoint_id: str) -> "CheckpointData | None":
+    def load(self, checkpoint_id: str) -> CheckpointData | None:
         """Load a checkpoint by ID."""
         from agentguard.core.checkpoint import CheckpointData
 
@@ -110,7 +110,7 @@ class SQLiteStore(BaseStore):
             conn.commit()
             return cursor.rowcount > 0
 
-    def list(self, limit: int = 100) -> list["CheckpointData"]:
+    def list(self, limit: int = 100) -> list[CheckpointData]:
         """List checkpoints, newest first."""
         from agentguard.core.checkpoint import CheckpointData
 

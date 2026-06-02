@@ -4,26 +4,31 @@ from __future__ import annotations
 
 import functools
 import time
+from collections.abc import Callable
 from dataclasses import dataclass, field
-from typing import Any, Callable, TypeVar
+from typing import Any, TypeVar
 
 from agentguard.core.checkpoint import Checkpoint
-from agentguard.core.detector import Anomaly, AnomalyDetector, AnomalyType
-from agentguard.core.recovery import RecoveryConfig, RecoveryEngine, RecoveryResult, RecoveryStrategy
+from agentguard.core.detector import Anomaly, AnomalyDetector
+from agentguard.core.recovery import (
+    RecoveryConfig,
+    RecoveryEngine,
+    RecoveryStrategy,
+)
 from agentguard.stores.sqlite import SQLiteStore
 
 T = TypeVar("T")
 
 # Global default guard instance
-_default_guard: "AgentGuard | None" = None
+_default_guard: AgentGuard | None = None
 
 
-def _get_default_guard() -> "AgentGuard | None":
+def _get_default_guard() -> AgentGuard | None:
     """Get the default AgentGuard instance."""
     return _default_guard
 
 
-def _set_default_guard(guard: "AgentGuard") -> None:
+def _set_default_guard(guard: AgentGuard) -> None:
     """Set the default AgentGuard instance."""
     global _default_guard
     _default_guard = guard
@@ -358,7 +363,7 @@ class AgentGuard:
             )
 
             # Record outcome
-            anomaly = self.detector.end_action(name, success=result.success)
+            self.detector.end_action(name, success=result.success)
 
             if result.success:
                 self.stats.successful_actions += 1
@@ -376,7 +381,7 @@ class AgentGuard:
                 self.detector.end_action(name, success=True)
                 self.stats.successful_actions += 1
                 return result
-            except Exception as e:
+            except Exception:
                 self.detector.end_action(name, success=False)
                 self.stats.failed_actions += 1
                 raise
@@ -421,7 +426,7 @@ class _ActionContext:
         self.cost = cost
         self._checkpoint_id: str | None = None
 
-    def __enter__(self) -> "_ActionContext":
+    def __enter__(self) -> _ActionContext:
         self._checkpoint_id = self.guard.save(f"before_{self.name}", self.state)
         self.guard.detector.start_action(self.name)
         return self

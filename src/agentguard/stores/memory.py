@@ -19,20 +19,20 @@ class MemoryStore(BaseStore):
     """
 
     def __init__(self) -> None:
-        self._data: dict[str, "CheckpointData"] = {}
+        self._data: dict[str, CheckpointData] = {}
         # Monotonic insertion counter used to break timestamp ties.
         # time.time() resolution (~15ms on Windows) is too coarse to order
         # checkpoints created in quick succession, so we track insertion order.
         self._seq: dict[str, int] = {}
         self._counter: int = 0
 
-    def save(self, data: "CheckpointData") -> None:
+    def save(self, data: CheckpointData) -> None:
         """Save a checkpoint."""
         self._data[data.id] = data
         self._counter += 1
         self._seq[data.id] = self._counter
 
-    def load(self, checkpoint_id: str) -> "CheckpointData | None":
+    def load(self, checkpoint_id: str) -> CheckpointData | None:
         """Load a checkpoint by ID."""
         return self._data.get(checkpoint_id)
 
@@ -44,7 +44,7 @@ class MemoryStore(BaseStore):
             return True
         return False
 
-    def list(self, limit: int = 100) -> list["CheckpointData"]:
+    def list(self, limit: int = 100) -> list[CheckpointData]:
         """List checkpoints, newest first."""
         sorted_checkpoints = sorted(
             self._data.values(),

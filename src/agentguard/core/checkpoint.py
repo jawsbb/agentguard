@@ -5,11 +5,10 @@ from __future__ import annotations
 import hashlib
 import pickle
 import time
+from collections.abc import Callable, Generator
 from contextlib import contextmanager
 from dataclasses import dataclass, field
-from datetime import datetime
-from pathlib import Path
-from typing import Any, Callable, Generator, TypeVar
+from typing import Any, TypeVar
 
 from pydantic import BaseModel, ConfigDict
 
@@ -135,7 +134,10 @@ class Checkpoint:
             Restored state dictionary
         """
         if steps >= len(self._checkpoint_stack):
-            raise ValueError(f"Cannot rollback {steps} steps, only {len(self._checkpoint_stack)} checkpoints exist")
+            raise ValueError(
+                f"Cannot rollback {steps} steps, only "
+                f"{len(self._checkpoint_stack)} checkpoints exist"
+            )
 
         target_idx = len(self._checkpoint_stack) - steps - 1
         target_id = self._checkpoint_stack[target_idx]

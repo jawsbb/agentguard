@@ -1,6 +1,6 @@
 """Basic AgentGuard usage example."""
 
-from agentguard import AgentGuard, guard, recover, RecoveryStrategy
+from agentguard import AgentGuard, RecoveryStrategy, guard, recover
 
 # Initialize AgentGuard
 ag = AgentGuard(

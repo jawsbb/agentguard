@@ -4,9 +4,10 @@ from __future__ import annotations
 
 import time
 from collections import deque
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from enum import Enum, auto
-from typing import Any, Callable
+from typing import Any
 
 
 class AnomalyType(Enum):
@@ -107,7 +108,10 @@ class AnomalyDetector:
                     Anomaly(
                         type=AnomalyType.TIMEOUT,
                         severity=min(1.0, duration / (self.timeout_seconds * 2)),
-                        message=f"Action '{action_name}' took {duration:.1f}s (limit: {self.timeout_seconds}s)",
+                        message=(
+                            f"Action '{action_name}' took {duration:.1f}s "
+                            f"(limit: {self.timeout_seconds}s)"
+                        ),
                         context={"duration": duration, "limit": self.timeout_seconds},
                     )
                 )
@@ -183,7 +187,7 @@ class AnomalyDetector:
                 return Anomaly(
                     type=AnomalyType.DRIFT,
                     severity=0.7,
-                    message=f"Output does not match expected pattern",
+                    message="Output does not match expected pattern",
                     context={"pattern": expected_pattern, "output_preview": output[:200]},
                 )
 
