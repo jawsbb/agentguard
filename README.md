@@ -3,26 +3,34 @@
 **Checkpoint, detect, recover — make any AI agent production-ready.**
 
 [![CI](https://github.com/jawsbb/agentguard/actions/workflows/ci.yml/badge.svg)](https://github.com/jawsbb/agentguard/actions/workflows/ci.yml)
-[![PyPI version](https://badge.fury.io/py/agentguard.svg)](https://badge.fury.io/py/agentguard)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![Python 3.10+](https://img.shields.io/badge/python-3.10+-blue.svg)](https://www.python.org/downloads/)
 
 ---
 
-## The Problem
+## Why
 
-**88% of AI agents never reach production.** Not because of bad models, but because of reliability failures.
+Reliability, not capability, is what keeps agents out of production. The math is
+unforgiving: a 10-step workflow where each step is **85%** reliable succeeds
+end-to-end only **0.85¹⁰ ≈ 20%** of the time. One flaky tool call, one infinite
+loop, one runaway cost spike — and the whole run is lost.
 
-Even at 85% reliability per step, a 10-step workflow succeeds only **20% of the time**. Most agent frameworks focus on capabilities, not reliability.
+Most agent frameworks optimize for what an agent *can* do. AgentGuard adds the
+missing reliability layer underneath:
 
-AgentGuard fixes this.
+- **Checkpoint** state before risky steps, and roll back on failure.
+- **Detect** loops, timeouts, cost spikes, and error cascades as they happen.
+- **Recover** automatically with retries, backoff, model switching, or escalation.
 
-## What It Does
+It's a small, dependency-light library you drop in with a decorator — no
+infrastructure, no SaaS.
+
+## Architecture
 
 ```
 ┌─────────────────────────────────────────────────────────┐
-│                      Your Agent                         │
-│            (Claude Code, Hermes, OpenClaw...)           │
+│                       Your Agent                        │
+│           (LangChain, CrewAI, custom loops, ...)        │
 └─────────────────────┬───────────────────────────────────┘
                       │
                       ▼
@@ -35,14 +43,20 @@ AgentGuard fixes this.
 └─────────────────────────────────────────────────────────┘
 ```
 
-- **Checkpoint**: Save state before risky operations, rollback on failure
-- **Detect**: Catch loops, timeouts, cost spikes, and error cascades in real-time
-- **Recover**: Intelligent retry with exponential backoff, model switching, or escalation
-
 ## Installation
 
+> Not on PyPI yet — install from source:
+
 ```bash
-pip install agentguard
+pip install git+https://github.com/jawsbb/agentguard
+```
+
+For local development:
+
+```bash
+git clone https://github.com/jawsbb/agentguard
+cd agentguard
+pip install -e ".[dev]"
 ```
 
 ## Quick Start
@@ -53,62 +67,57 @@ pip install agentguard
 from agentguard import guard
 
 @guard
-def risky_operation():
+def risky_operation(prompt):
     return agent.execute(prompt)
 
-# Automatically checkpoints, retries on failure, rolls back if needed
-result = risky_operation()
+# Checkpoints before running, retries with backoff on failure
+result = risky_operation("do the thing")
 ```
 
-### Context Manager
+### Context manager
 
 ```python
 from agentguard import AgentGuard
 
-ag = AgentGuard(
-    store="sqlite:///agent.db",
-    cost_limit=0.50,
-    max_retries=3,
-)
+ag = AgentGuard(store="sqlite:///agent.db", max_retries=3)
 
 with ag.action("code_execution", state={"files": files}):
     result = agent.run_code(code)
-    # Auto-rollback on exception
+    # State is rolled back automatically if the block raises
 ```
 
-### Manual Control
+### Manual checkpoint / rollback
 
 ```python
 from agentguard import AgentGuard
 
 ag = AgentGuard()
 
-# Checkpoint before dangerous action
 ag.save("before_deploy", state={"version": "1.0", "config": config})
-
 try:
     deploy()
 except DeploymentError:
-    # Restore previous state
     state = ag.rollback()
     print(f"Rolled back to version {state['version']}")
 ```
 
 ## Features
 
-### Anomaly Detection
+### Anomaly detection
 
-AgentGuard automatically detects:
-
-| Anomaly | Description | Default Threshold |
+| Anomaly | Description | Default threshold |
 |---------|-------------|-------------------|
 | **Loop** | Same action repeated N times | 5 repetitions |
 | **Timeout** | Action exceeds time limit | 30 seconds |
-| **Cost Spike** | Token usage anomaly | $0.10/action |
-| **Error Cascade** | Consecutive failures | 3 errors |
-| **Drift** | Output diverges from pattern | Configurable |
+| **Cost spike** | Per-action cost anomaly | $0.10 / action |
+| **Error cascade** | Consecutive failures | 3 errors |
+| **Drift** | Output diverges from an expected pattern | configurable |
+| **Hallucination** | Low model confidence | confidence < 0.3 |
 
-### Recovery Strategies
+Detection is currently *post-hoc*: an anomaly is flagged after the action
+completes (it is recorded and counted, the call is not killed mid-flight).
+
+### Recovery strategies
 
 ```python
 from agentguard import RecoveryStrategy
@@ -117,22 +126,17 @@ from agentguard import RecoveryStrategy
 def api_call():
     ...
 
-# Available strategies:
-# - RETRY: Simple retry
-# - EXPONENTIAL_BACKOFF: Increasing delays
-# - ROLLBACK: Restore checkpoint
-# - SIMPLIFY: Retry with simpler prompt
-# - DIFFERENT_MODEL: Try alternative model
-# - HUMAN_ESCALATE: Pause for human input
-# - SKIP: Continue without this step
+# Strategies:
+#   RETRY · EXPONENTIAL_BACKOFF · ROLLBACK · SIMPLIFY
+#   DIFFERENT_MODEL · HUMAN_ESCALATE · SKIP · ABORT
 ```
 
-Strategies like `SIMPLIFY` and `DIFFERENT_MODEL` only do real work when you
-register a callback that transforms the next attempt. Register one with
-`guard.on_recover(...)` and supply an escalation plan via `strategies=[...]`:
+`SIMPLIFY` and `DIFFERENT_MODEL` only do real work when you register a callback
+that transforms the next attempt. Register one with `guard.on_recover(...)` and
+supply an escalation plan via `strategies=[...]`:
 
 ```python
-# Swap to a fallback model after a failure, then retry
+# Switch to a fallback model after a failure, then retry
 guard.on_recover(
     RecoveryStrategy.DIFFERENT_MODEL,
     lambda attempt, error: client.use_fallback_model(),
@@ -147,7 +151,7 @@ The plan lists recovery actions *between* attempts (`plan[0]` runs after the
 first failure). See [`examples/model_switching.py`](examples/model_switching.py)
 for a runnable end-to-end example.
 
-### Cost Tracking
+### Cost tracking
 
 Report the cost of an action so AgentGuard can total it and flag spikes:
 
@@ -168,20 +172,12 @@ print(guard.get_stats()["total_cost"])  # "$0.2500"
 ### CLI
 
 ```bash
-# View status
-agentguard status
-
-# List checkpoints
-agentguard list
-
-# Show checkpoint details
-agentguard show <checkpoint-id>
-
-# Rollback
-agentguard rollback <checkpoint-id>
-
-# Statistics
-agentguard stats
+agentguard status              # recent checkpoints
+agentguard list                # list checkpoints
+agentguard show <id>           # checkpoint details (id or prefix)
+agentguard rollback <id>       # restore a checkpoint (--dry-run to preview)
+agentguard stats               # database statistics
+agentguard clear --force       # wipe all checkpoints
 ```
 
 ## Configuration
@@ -190,93 +186,82 @@ agentguard stats
 from agentguard import AgentGuard
 
 ag = AgentGuard(
-    # Storage
     store="sqlite:///agent.db",  # or "memory" (redis:// coming soon)
-
-    # Limits
     cost_limit=1.0,              # USD per run
     timeout=30.0,                # seconds per action
-    max_loops=5,                 # repeated action threshold
-
-    # Recovery
+    max_loops=5,                 # repeated-action threshold
     max_retries=3,
     auto_recover=True,
-
-    # Debug
     verbose=True,
 )
 ```
 
-## Integrations
-
-AgentGuard works with any Python-based agent:
-
-- **Claude Code** — via MCP server (coming soon)
-- **Hermes Agent** — direct integration
-- **LangChain** — as a callback handler
-- **CrewAI** — as middleware
-- **Custom agents** — decorator or context manager
-
-## Why AgentGuard?
-
-| Feature | Temporal | LangSmith | AgentGuard |
-|---------|----------|-----------|------------|
-| Focus | Generic workflows | LLM observability | Agent reliability |
-| Setup | Infrastructure required | SaaS | `pip install` |
-| Recovery | Manual | None | Automatic |
-| Open Source | Partial | No | 100% MIT |
-| Agent-aware | No | Yes | Yes + recovery |
-
-## Stats & Observability
+## Observability
 
 ```python
-# Get runtime statistics
 stats = ag.get_stats()
-print(stats)
 # {
-#     "total_actions": 42,
-#     "successful_actions": 40,
-#     "success_rate": "95.2%",
-#     "anomalies_detected": 3,
-#     "rollbacks_performed": 2,
-#     "total_cost": "$0.1234",
+#   "total_actions": 42,
+#   "successful_actions": 40,
+#   "failed_actions": 2,
+#   "recovered_actions": 3,
+#   "success_rate": "95.2%",
+#   "anomalies_detected": 3,
+#   "checkpoints_created": 42,
+#   "rollbacks_performed": 2,
+#   "total_cost": "$0.1234",
+#   "runtime": "12.3s",
 # }
 ```
 
+## Integrations
+
+AgentGuard wraps any Python callable, so it works with any agent framework today
+via the decorator or context manager:
+
+- **Custom agent loops** — `@guard.protect` / `with guard.action(...)`
+- **LangChain · CrewAI · LlamaIndex** — wrap your tool or step functions
+
+First-class adapters and a Claude Code MCP server are planned — see the roadmap.
+
+## Why AgentGuard?
+
+| | Temporal | LangSmith | AgentGuard |
+|---|---|---|---|
+| Focus | Generic workflows | LLM observability | Agent reliability |
+| Setup | Infrastructure | SaaS | `pip install` |
+| Recovery | Manual | None | Automatic |
+| Open source | Partial | No | 100% MIT |
+
 ## Roadmap
 
-- [x] Core checkpoint/restore
-- [x] Anomaly detection (loops, timeouts, cost)
-- [x] Recovery strategies
-- [x] SQLite storage
+- [x] Core checkpoint / restore
+- [x] Anomaly detection (loop, timeout, cost, error cascade, drift)
+- [x] Recovery strategies with transform callbacks
+- [x] Cost tracking
+- [x] SQLite + in-memory storage
 - [x] CLI
 - [ ] Redis storage
-- [ ] Web dashboard
-- [ ] MCP server integration
-- [ ] Webhook alerts
+- [ ] In-flight anomaly detection (kill/recover mid-action)
+- [ ] Claude Code MCP server
+- [ ] Web dashboard & webhook alerts
 - [ ] Multi-agent coordination
 
 ## Contributing
 
-Contributions welcome! See [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines.
+Contributions welcome — see [CONTRIBUTING.md](CONTRIBUTING.md). Known gaps and
+good first issues are tracked in [KNOWN_ISSUES.md](KNOWN_ISSUES.md).
 
 ```bash
-# Setup dev environment
-git clone https://github.com/jawsbb/agentguard
-cd agentguard
 pip install -e ".[dev]"
-
-# Run tests
-pytest
-
-# Lint
-ruff check src/
+ruff check src/ tests/ examples/    # lint
+pytest -q                           # 62 tests
 ```
 
 ## License
 
-MIT License — see [LICENSE](LICENSE) for details.
+MIT — see [LICENSE](LICENSE).
 
 ---
 
-Built by [@jawsbb](https://github.com/jawsbb) | [Level Up](https://levelup.run) & [Fabrik](https://fabrik.ai)
+Built by [@jawsbb](https://github.com/jawsbb) · [Level Up](https://levelup.run) & [Fabrik](https://fabrik.ai)
