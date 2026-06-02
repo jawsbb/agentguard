@@ -221,19 +221,45 @@ class AgentGuard:
             return decorator(func)
         return decorator
 
-    def action(self, name: str, state: dict[str, Any] | None = None):
+    def action(
+        self,
+        name: str,
+        state: dict[str, Any] | None = None,
+        cost: float = 0.0,
+    ):
         """
         Context manager for protecting a code block.
 
         Args:
             name: Action name for tracking
             state: Optional state to checkpoint
+            cost: Cost in USD attributed to this action (for cost tracking)
 
         Usage:
             with guard.action("deploy", state={"version": "1.0"}):
                 deploy_to_prod()
         """
-        return _ActionContext(self, name, state)
+        return _ActionContext(self, name, state, cost)
+
+    def record_cost(self, cost: float) -> None:
+        """
+        Report the cost (USD) of an action for tracking and spike detection.
+
+        Use this when the cost is only known after the action runs, e.g.::
+
+            @guard.protect
+            def call_llm(prompt):
+                resp = llm.complete(prompt)
+                guard.record_cost(resp.usage.cost)
+                return resp
+
+        Args:
+            cost: Cost in USD to add to the running total.
+        """
+        if cost <= 0:
+            return
+        self.stats.total_cost += cost
+        self.detector.record_cost(cost)
 
     def save(self, name: str, state: dict[str, Any]) -> str:
         """Save a checkpoint manually."""
@@ -354,10 +380,17 @@ class AgentGuard:
 class _ActionContext:
     """Context manager for guard.action()."""
 
-    def __init__(self, guard: AgentGuard, name: str, state: dict[str, Any] | None):
+    def __init__(
+        self,
+        guard: AgentGuard,
+        name: str,
+        state: dict[str, Any] | None,
+        cost: float = 0.0,
+    ):
         self.guard = guard
         self.name = name
         self.state = state or {}
+        self.cost = cost
         self._checkpoint_id: str | None = None
 
     def __enter__(self) -> "_ActionContext":
@@ -367,7 +400,9 @@ class _ActionContext:
 
     def __exit__(self, exc_type, exc_val, exc_tb) -> bool:
         success = exc_type is None
-        self.guard.detector.end_action(self.name, success=success)
+        self.guard.detector.end_action(self.name, success=success, cost=self.cost)
+        if self.cost > 0:
+            self.guard.stats.total_cost += self.cost
 
         if not success:
             self.guard.stats.failed_actions += 1

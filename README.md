@@ -126,6 +126,24 @@ def api_call():
 # - SKIP: Continue without this step
 ```
 
+### Cost Tracking
+
+Report the cost of an action so AgentGuard can total it and flag spikes:
+
+```python
+@guard.protect
+def call_llm(prompt: str) -> str:
+    resp = llm.complete(prompt)
+    guard.record_cost(resp.usage.cost_usd)  # learned after the call
+    return resp.text
+
+# or attach a known cost to a block
+with guard.action("batch_job", cost=0.25):
+    run_batch()
+
+print(guard.get_stats()["total_cost"])  # "$0.2500"
+```
+
 ### CLI
 
 ```bash

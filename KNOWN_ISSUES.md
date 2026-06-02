@@ -8,13 +8,18 @@ The items below are known limitations that are **not yet addressed**. They are
 tracked here so the README does not oversell capabilities that aren't wired up
 yet. Contributions welcome.
 
+## Recently fixed
+
+- **Cost tracking now works.** Use `guard.record_cost(usd)` (when the cost is
+  known after the call) or `guard.action(name, cost=usd)`. Both update
+  `stats.total_cost` and feed the cost-spike detector. ✅
+- **Pydantic v2 deprecation removed** — `CheckpointData` now uses
+  `model_config = ConfigDict(...)`. ✅
+- **Test coverage added** for the detector, recovery engine, and guard
+  orchestrator (43 tests). ✅
+
 ## Features advertised but not fully wired
 
-- **Cost tracking is inert.** `AgentGuard.get_stats()["total_cost"]` is always
-  `$0.0000`. In the main `protect`/`action` path, `detector.end_action()` is
-  called without a `cost` argument, so the cost-spike anomaly never fires and
-  `stats.total_cost` is never incremented. Needs a way to feed per-action token
-  cost into the guard.
 - **Anomaly-driven recovery is not connected.** `RecoveryConfig.strategy_map`
   and `RecoveryEngine.get_strategy_for_anomaly()` exist but are never consulted
   by the guard, which uses a single fixed strategy per call. The `SIMPLIFY`,
@@ -33,11 +38,7 @@ yet. Contributions welcome.
 
 ## Quality / hygiene
 
-- **Pydantic v2 deprecation.** `CheckpointData` uses the v1-style
-  `class Config`, which emits a `DeprecationWarning`. Switch to
-  `model_config = ConfigDict(arbitrary_types_allowed=True)`.
-- **Test coverage gaps.** Only `checkpoint` (and `SQLiteStore`) are tested.
-  `detector`, `recovery`, `guard`, and `cli` have no tests yet.
+- **`cli` has no tests yet** (core modules are now covered).
 - **`_safe_serialize` pickle path.** It can emit pickled-hex blobs that are
   never decoded back on restore; loading arbitrary pickles is also a security
   consideration.

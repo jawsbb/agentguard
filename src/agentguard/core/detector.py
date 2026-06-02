@@ -189,6 +189,29 @@ class AnomalyDetector:
 
         return None
 
+    def record_cost(self, cost: float) -> Anomaly | None:
+        """
+        Record a cost sample and check for a spike.
+
+        Use this to feed per-action token cost into the detector outside of
+        the start_action/end_action lifecycle (e.g. from a decorator that
+        learns the cost from the function's result).
+
+        Args:
+            cost: Cost in USD for the action.
+
+        Returns:
+            Anomaly if a cost spike is detected, None otherwise.
+        """
+        if cost <= 0:
+            return None
+
+        self._cost_history.append(cost)
+        anomaly = self._check_cost(cost)
+        if anomaly and self.on_anomaly:
+            self.on_anomaly(anomaly)
+        return anomaly
+
     def reset(self) -> None:
         """Reset detector state."""
         self._action_history.clear()
