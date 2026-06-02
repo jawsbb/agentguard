@@ -84,6 +84,28 @@ class TestCostTracking:
         assert guard.stats.total_cost == 0.0
 
 
+class TestRecoveryWiring:
+    def test_different_model_callback_switches_then_succeeds(self, guard):
+        guard.max_retries = 2
+        guard.recovery.config.max_retries = 2
+        guard.recovery.config.base_delay = 0  # no sleeping in tests
+
+        state = {"model": "primary"}
+        guard.on_recover(
+            RecoveryStrategy.DIFFERENT_MODEL,
+            lambda attempt, error: state.update(model="fallback"),
+        )
+
+        @guard.protect(strategies=[RecoveryStrategy.DIFFERENT_MODEL])
+        def call():
+            if state["model"] == "primary":
+                raise ConnectionError("primary down")
+            return "served by " + state["model"]
+
+        assert call() == "served by fallback"
+        assert guard.stats.recovered_actions == 1
+
+
 class TestStoreSelection:
     def test_redis_raises_clear_error(self):
         with pytest.raises(NotImplementedError):

@@ -174,6 +174,7 @@ class AgentGuard:
         recover: bool | None = None,
         timeout: float | None = None,
         strategy: RecoveryStrategy | None = None,
+        strategies: list[RecoveryStrategy] | None = None,
     ) -> Callable[..., T] | Callable[[Callable[..., T]], Callable[..., T]]:
         """
         Decorator to protect a function with checkpointing and recovery.
@@ -185,13 +186,16 @@ class AgentGuard:
             recover: Whether to auto-recover (defaults to self.auto_recover)
             timeout: Custom timeout for this function
             strategy: Recovery strategy to use (defaults to EXPONENTIAL_BACKOFF)
+            strategies: Optional escalation plan (one strategy per attempt),
+                e.g. [RETRY, SIMPLIFY, DIFFERENT_MODEL]. Overrides `strategy`.
 
         Usage:
             @guard.protect
             def my_function():
                 ...
 
-            @guard.protect(name="custom_name", strategy=RecoveryStrategy.RETRY)
+            @guard.protect(strategies=[RecoveryStrategy.RETRY,
+                                       RecoveryStrategy.DIFFERENT_MODEL])
             def another_function():
                 ...
         """
@@ -213,6 +217,7 @@ class AgentGuard:
                     checkpoint,
                     recover,
                     strategy,
+                    strategies,
                 )
 
             return wrapper
@@ -261,6 +266,27 @@ class AgentGuard:
         self.stats.total_cost += cost
         self.detector.record_cost(cost)
 
+    def on_recover(
+        self,
+        strategy: RecoveryStrategy,
+        callback: Callable[..., Any],
+    ) -> None:
+        """
+        Register a callback that runs before a retry uses ``strategy``.
+
+        This is what makes strategies like ``DIFFERENT_MODEL`` or ``SIMPLIFY``
+        do real work: the callback transforms shared state (swap the model,
+        shorten the prompt, ...) so the next attempt behaves differently.
+
+        The callback may accept ``(attempt, error)``, ``(attempt,)``, or no
+        arguments.
+
+        Usage:
+            guard.on_recover(RecoveryStrategy.DIFFERENT_MODEL,
+                             lambda attempt, err: switch_to_fallback_model())
+        """
+        self.recovery.register_callback(strategy, callback)
+
     def save(self, name: str, state: dict[str, Any]) -> str:
         """Save a checkpoint manually."""
         checkpoint_id = self.checkpoint.save(name, state)
@@ -307,6 +333,7 @@ class AgentGuard:
         do_checkpoint: bool,
         do_recover: bool,
         strategy: RecoveryStrategy = RecoveryStrategy.EXPONENTIAL_BACKOFF,
+        strategies: list[RecoveryStrategy] | None = None,
     ) -> T:
         """Execute a function with protection."""
         self.stats.total_actions += 1
@@ -327,6 +354,7 @@ class AgentGuard:
             result = self.recovery.execute_with_recovery(
                 execute,
                 strategy=strategy,
+                strategies=strategies,
             )
 
             # Record outcome

@@ -16,16 +16,22 @@ yet. Contributions welcome.
 - **Pydantic v2 deprecation removed** — `CheckpointData` now uses
   `model_config = ConfigDict(...)`. ✅
 - **Test coverage added** for the detector, recovery engine, and guard
-  orchestrator (43 tests). ✅
+  orchestrator (48 tests). ✅
+- **Recovery strategies now do real work.** Register a transform with
+  `guard.on_recover(strategy, callback)` and pass an escalation plan via
+  `@guard.protect(strategies=[...])`. The callback runs before the next attempt
+  (e.g. switch model / simplify prompt). `RecoveryEngine.execute_for_anomaly()`
+  drives recovery from `strategy_map`. See `examples/model_switching.py`. ✅
 
 ## Features advertised but not fully wired
 
-- **Anomaly-driven recovery is not connected.** `RecoveryConfig.strategy_map`
-  and `RecoveryEngine.get_strategy_for_anomaly()` exist but are never consulted
-  by the guard, which uses a single fixed strategy per call. The `SIMPLIFY`,
-  `DIFFERENT_MODEL`, and `ROLLBACK` strategies currently only sleep — there is
-  no prompt simplification or model switching behind them yet (the README's
-  "model switching" claim is aspirational).
+- **Anomaly type does not auto-select the strategy in the guard path.** The
+  building blocks exist (`strategy_map`, `execute_for_anomaly`,
+  `get_strategy_for_anomaly`), but `guard.protect`/`action` still need the
+  caller to pass `strategies=`. Auto-selecting the plan from a live anomaly
+  would require detecting the anomaly *during* execution rather than at
+  `end_action` (post-hoc). Callbacks are also required for SIMPLIFY/
+  DIFFERENT_MODEL to have an effect — without one they degrade to a plain retry.
 - **`checkpoint.guard()` restore semantics.** On exception it restores the
   checkpoint it created *on entry* (the about-to-run state), not the prior safe
   state. Worth revisiting whether this is the intended rollback behavior.

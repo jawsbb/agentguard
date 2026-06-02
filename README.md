@@ -126,6 +126,26 @@ def api_call():
 # - SKIP: Continue without this step
 ```
 
+Strategies like `SIMPLIFY` and `DIFFERENT_MODEL` only do real work when you
+register a callback that transforms the next attempt. Register one with
+`guard.on_recover(...)` and supply an escalation plan via `strategies=[...]`:
+
+```python
+# Swap to a fallback model after a failure, then retry
+guard.on_recover(
+    RecoveryStrategy.DIFFERENT_MODEL,
+    lambda attempt, error: client.use_fallback_model(),
+)
+
+@guard.protect(strategies=[RecoveryStrategy.RETRY, RecoveryStrategy.DIFFERENT_MODEL])
+def generate(prompt):
+    return client.complete(prompt)
+```
+
+The plan lists recovery actions *between* attempts (`plan[0]` runs after the
+first failure). See [`examples/model_switching.py`](examples/model_switching.py)
+for a runnable end-to-end example.
+
 ### Cost Tracking
 
 Report the cost of an action so AgentGuard can total it and flag spikes:
