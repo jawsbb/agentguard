@@ -35,32 +35,6 @@ def _set_default_guard(guard: AgentGuard) -> None:
 
 
 @dataclass
-class GuardConfig:
-    """Configuration for AgentGuard."""
-
-    # Store
-    store_path: str = "agentguard.db"
-    store_type: str = "sqlite"  # sqlite, redis, memory
-
-    # Checkpoint
-    max_checkpoints: int = 100
-
-    # Detection
-    max_loops: int = 5
-    timeout_seconds: float = 30.0
-    cost_limit: float = 1.0  # USD per run
-
-    # Recovery
-    max_retries: int = 3
-    default_strategy: RecoveryStrategy = RecoveryStrategy.EXPONENTIAL_BACKOFF
-
-    # Behavior
-    auto_checkpoint: bool = True
-    auto_recover: bool = True
-    verbose: bool = False
-
-
-@dataclass
 class GuardStats:
     """Runtime statistics."""
 
@@ -189,7 +163,8 @@ class AgentGuard:
             name: Custom name for tracking
             checkpoint: Whether to checkpoint before execution
             recover: Whether to auto-recover (defaults to self.auto_recover)
-            timeout: Custom timeout for this function
+            timeout: Per-call timeout (seconds); a slower call is flagged as a
+                TIMEOUT anomaly (detection is post-hoc — the call is not killed)
             strategy: Recovery strategy to use (defaults to EXPONENTIAL_BACKOFF)
             strategies: Optional escalation plan (one strategy per attempt),
                 e.g. [RETRY, SIMPLIFY, DIFFERENT_MODEL]. Overrides `strategy`.
@@ -223,6 +198,7 @@ class AgentGuard:
                     recover,
                     strategy,
                     strategies,
+                    timeout,
                 )
 
             return wrapper
@@ -339,6 +315,7 @@ class AgentGuard:
         do_recover: bool,
         strategy: RecoveryStrategy = RecoveryStrategy.EXPONENTIAL_BACKOFF,
         strategies: list[RecoveryStrategy] | None = None,
+        timeout: float | None = None,
     ) -> T:
         """Execute a function with protection."""
         self.stats.total_actions += 1
@@ -349,42 +326,52 @@ class AgentGuard:
             self.checkpoint.save(f"before_{name}", state)
             self.stats.checkpoints_created += 1
 
+        # Apply a per-call timeout override for anomaly detection, if given.
+        prev_timeout = self.detector.timeout_seconds
+        if timeout is not None:
+            self.detector.timeout_seconds = timeout
+
         # Start tracking
         self.detector.start_action(name)
 
         def execute() -> T:
             return func(*args, **kwargs)
 
-        if do_recover:
-            result = self.recovery.execute_with_recovery(
-                execute,
-                strategy=strategy,
-                strategies=strategies,
-            )
+        try:
+            if do_recover:
+                result = self.recovery.execute_with_recovery(
+                    execute,
+                    strategy=strategy,
+                    strategies=strategies,
+                )
 
-            # Record outcome
-            self.detector.end_action(name, success=result.success)
+                # Record outcome
+                self.detector.end_action(name, success=result.success)
 
-            if result.success:
-                self.stats.successful_actions += 1
-                if result.attempts > 1:
-                    self.stats.recovered_actions += 1
-                return result.final_result
+                if result.success:
+                    self.stats.successful_actions += 1
+                    if result.attempts > 1:
+                        self.stats.recovered_actions += 1
+                    return result.final_result
+                else:
+                    self.stats.failed_actions += 1
+                    if result.error:
+                        raise result.error
+                    raise RuntimeError(
+                        f"Action {name} failed after {result.attempts} attempts"
+                    )
             else:
-                self.stats.failed_actions += 1
-                if result.error:
-                    raise result.error
-                raise RuntimeError(f"Action {name} failed after {result.attempts} attempts")
-        else:
-            try:
-                result = execute()
-                self.detector.end_action(name, success=True)
-                self.stats.successful_actions += 1
-                return result
-            except Exception:
-                self.detector.end_action(name, success=False)
-                self.stats.failed_actions += 1
-                raise
+                try:
+                    result = execute()
+                    self.detector.end_action(name, success=True)
+                    self.stats.successful_actions += 1
+                    return result
+                except Exception:
+                    self.detector.end_action(name, success=False)
+                    self.stats.failed_actions += 1
+                    raise
+        finally:
+            self.detector.timeout_seconds = prev_timeout
 
     def _on_anomaly(self, anomaly: Anomaly) -> None:
         """Handle detected anomaly."""

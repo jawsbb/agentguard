@@ -57,8 +57,9 @@ def status(
     console.print(f"\n[dim]Database: {db}[/dim]")
 
 
-@app.command()
-def list(
+# Named to avoid shadowing the builtin `list`, which other commands call.
+@app.command("list")
+def list_checkpoints(
     db: str = typer.Option("agentguard.db", "--db", "-d", help="Database path"),
     limit: int = typer.Option(20, "--limit", "-n", help="Number of checkpoints to show"),
 ) -> None:

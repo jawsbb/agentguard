@@ -106,6 +106,29 @@ class TestRecoveryWiring:
         assert guard.stats.recovered_actions == 1
 
 
+class TestTimeout:
+    def test_slow_call_flags_timeout_anomaly(self, guard):
+        import time
+
+        @guard.protect(timeout=0.01)
+        def slow():
+            time.sleep(0.02)
+            return "done"
+
+        assert slow() == "done"
+        assert guard.stats.anomalies_detected >= 1
+
+    def test_timeout_override_is_restored(self, guard):
+        original = guard.detector.timeout_seconds
+
+        @guard.protect(timeout=0.5)
+        def quick():
+            return 1
+
+        quick()
+        assert guard.detector.timeout_seconds == original
+
+
 class TestStoreSelection:
     def test_redis_raises_clear_error(self):
         with pytest.raises(NotImplementedError):

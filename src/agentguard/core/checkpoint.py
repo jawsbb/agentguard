@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import hashlib
-import pickle
 import time
 from collections.abc import Callable, Generator
 from contextlib import contextmanager
@@ -245,20 +244,17 @@ def checkpoint(
 
 
 def _safe_serialize(obj: Any) -> Any:
-    """Safely serialize an object for checkpointing."""
-    try:
-        # Try JSON-serializable first
-        import json
+    """Safely serialize an object for checkpointing.
 
+    JSON-serializable values pass through unchanged; anything else is reduced
+    to a ``repr`` marker. We deliberately do not pickle arbitrary objects into
+    the store: those blobs were never decoded on restore, and unpickling
+    untrusted data is a security risk.
+    """
+    import json
+
+    try:
         json.dumps(obj)
         return obj
     except (TypeError, ValueError):
-        pass
-
-    # Try pickle
-    try:
-        pickled = pickle.dumps(obj)
-        return {"__pickled__": True, "data": pickled.hex()}
-    except Exception:
-        # Last resort: string representation
         return {"__repr__": True, "value": repr(obj)}

@@ -124,6 +124,27 @@ class TestCheckpoint:
         assert len(history) == 0
 
 
+class TestSafeSerialize:
+    def test_json_value_passes_through(self):
+        from agentguard.core.checkpoint import _safe_serialize
+
+        assert _safe_serialize({"a": 1, "b": [2, 3]}) == {"a": 1, "b": [2, 3]}
+
+    def test_non_json_object_becomes_repr_marker(self):
+        import json
+
+        from agentguard.core.checkpoint import _safe_serialize
+
+        class Thing:
+            def __repr__(self):
+                return "Thing()"
+
+        result = _safe_serialize(Thing())
+        assert result == {"__repr__": True, "value": "Thing()"}
+        # Must be JSON-serializable (no pickle blobs in the store)
+        json.dumps(result)
+
+
 class TestSQLiteStore:
     """Tests for SQLite store."""
 
