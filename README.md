@@ -45,7 +45,11 @@ infrastructure, no SaaS.
 
 ## Installation
 
-> Not on PyPI yet — install from source:
+```bash
+pip install agentguard
+```
+
+Or from source:
 
 ```bash
 pip install git+https://github.com/jawsbb/agentguard
